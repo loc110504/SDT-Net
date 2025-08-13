@@ -28,7 +28,7 @@ from time import strftime
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("--batch_size", default=8, type=int)
-    parser.add_argument("--max_epoches", default=100, type=int)
+    parser.add_argument("--max_epoches", default=366, type=int)
     parser.add_argument("--networks", default="networks.scribformer", type=str)
     parser.add_argument("--lr", default=0.001, type=float)
     parser.add_argument("--num_workers", default=8, type=int)
@@ -36,7 +36,7 @@ if __name__ == '__main__':
     parser.add_argument("--session_name", default="TransCAM", type=str)
     parser.add_argument("--crop_size", default=512, type=int)
     parser.add_argument("--weights", default='', type=str)
-    parser.add_argument("--tblog_dir", default='./tblog', type=str)
+    parser.add_argument("--tblog_dir", default='../../checkpoints/ACDC_ScribFormer', type=str)
     parser.add_argument('--deterministic', type=int, default=1,
                         help='whether use deterministic training')
     parser.add_argument('--root_path', type=str,
@@ -77,7 +77,7 @@ if __name__ == '__main__':
 
     model = getattr(importlib.import_module(args.networks), 'ScribFormer')(linear_layer=args.linear_layer, bilinear=args.bilinear)
     print('model is from', model.__class__)
-
+    os.makedirs(args.tblog_dir, exist_ok=True)
     tblogger = SummaryWriter(args.tblog_dir)
 
     db_train = BaseDataSets(base_dir=args.root_path, split="train", transform=transforms.Compose([
@@ -113,6 +113,10 @@ if __name__ == '__main__':
     best_epoch = 0
     iter_num = 0
     max_iterations = args.max_epoches * len(trainloader)
+
+    patience = 122          # số epoch cho phép không cải thiện
+    min_delta = 1e-5      # mức cải thiện tối thiểu coi là tiến bộ
+    epochs_no_improve = 0
 
     model = model.cuda()
     optimizer = optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.wt_dec, eps=1e-8)
@@ -188,15 +192,20 @@ if __name__ == '__main__':
                 print("{} model!".format(ep))
                 file_name = os.path.join(snapshot_path, '{}_{}_model.pth'.format(args.model, ep))
                 torch.save(model.state_dict(), file_name)
-            if performance > best_performance:
+            if performance > best_performance + min_delta:
                 best_performance = performance
                 best_epoch = ep
-
+                epochs_no_improve = 0
                 save_best = os.path.join(snapshot_path,
                                          '{}_best_model.pth'.format(args.model))
 
                 torch.save(model.state_dict(), save_best)
                 print('best model in epoch %5d  mean_dice : %.4f' % (ep, performance))
+            else:
+                epochs_no_improve += 1
+            if epochs_no_improve >= patience:
+                print(f"Early stopping at epoch {ep} — no improvement for {patience} epochs.")
+                break
 
             print(
                 'epoch %5d  mean_dice : %.4f mean_hd95 : %.4f' % (ep, performance, mean_hd95), flush=True)
