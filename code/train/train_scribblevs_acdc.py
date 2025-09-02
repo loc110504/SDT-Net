@@ -55,6 +55,7 @@ parser.add_argument('--seed', type=int,  default=2022, help='random seed')
 parser.add_argument('--gpu', type=str, default='0', help='GPU to use')
 args = parser.parse_args()
 os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
+
 def get_current_consistency_weight(epoch):
     # Consistency ramp-up from https://arxiv.org/abs/1610.02242
     return 1 * ramps.sigmoid_rampup(epoch, 40)
@@ -91,6 +92,7 @@ class WeightEMA(object):
                 ema_param.add_(param * one_minus_alpha)
                 # customized weight decay
                 param.mul_(1 - self.wd)
+
 def train(args, snapshot_path):
     base_lr = args.base_lr
     num_classes = args.num_classes
