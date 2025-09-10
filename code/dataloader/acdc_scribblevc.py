@@ -3,7 +3,7 @@ import os
 import random
 import re
 from glob import glob
-import pandas as pd
+
 import cv2
 import h5py
 import numpy as np
@@ -15,6 +15,7 @@ from torch.utils.data.sampler import Sampler
 
 from random import sample
 
+import pandas as pd
 
 def pseudo_label_generator_acdc(data, seed, beta=100, mode='bf'):
     from skimage.exposure import rescale_intensity
@@ -35,8 +36,9 @@ def pseudo_label_generator_acdc(data, seed, beta=100, mode='bf'):
         pseudo_label = segmentation - 1
     return pseudo_label
 
-# ACDC Dataset Loader
-class BaseDataSets(Dataset):
+
+# ACDC Dataset Loader for ScribbleVC
+class BaseDataSets_ScribbleVC(Dataset):
     """
     Base class for ACDC dataset loader. Choose the suitable fold and split
     """
@@ -46,7 +48,11 @@ class BaseDataSets(Dataset):
         self.split = split
         self.sup_type = sup_type
         self.transform = transform
+        self.category_list = pd.read_excel(self._base_dir + '/slice_classification_ACDC.xlsx')
+        self.category_list.set_index('slice', inplace=True)
+        self.category_list = self.category_list.astype(bool)
         train_ids, test_ids = self._get_fold_ids(fold)
+
         if self.split == 'train':
             self.all_slices = os.listdir(
                 self._base_dir + "/ACDC_training_slices")
@@ -142,69 +148,95 @@ class BaseDataSets(Dataset):
         else:
             h5f = h5py.File(self._base_dir +
                             "/ACDC_training_volumes/{}".format(case), 'r')
-        image = h5f['image'][:]
-        label = h5f['label'][:]
-        sample = {'image': image, 'label': label}
+        # image = h5f['image'][:]
+        # label = h5f['label'][:]
+        # sample = {'image': image, 'label': label}
         if self.split == "train":
             image = h5f['image'][:]
             if self.sup_type == "random_walker":
                 label = pseudo_label_generator_acdc(image, h5f["scribble"][:])
             else:
                 label = h5f[self.sup_type][:]
-            sample = {'image': image, 'label': label}
-            sample = self.transform(sample)
+            sample = {'image': image, 'label': label, 'gt': h5f['label'][:], 'category': torch.from_numpy(self.category_list.loc[case].values)}
+            if self.transform:
+                category_backup = sample['category'].clone()
+                sample = self.transform(sample)
+                sample['category'] = category_backup
         else:
             image = h5f['image'][:]
             label = h5f['label'][:]
-            sample = {'image': image, 'label': label}
-        sample["idx"] = idx
+            sample = {'image': image, 'label': label.astype(np.int8)}
+        sample["idx"] = case
         return sample
-    
 
-def random_rot_flip(image, label):
-    k = np.random.randint(0, 4)
-    image = np.rot90(image, k)
-    label = np.rot90(label, k)
-    axis = np.random.randint(0, 2)
-    image = np.flip(image, axis=axis).copy()
-    label = np.flip(label, axis=axis).copy()
-    return image, label
-
-
-def random_rotate(image, label, cval):
-    angle = np.random.randint(-20, 20)
-    image = ndimage.rotate(image, angle, order=0, reshape=False)
-    label = ndimage.rotate(label, angle, order=0,
-                           reshape=False, mode="constant", cval=cval)
-    return image, label
-
-
-
-class RandomGenerator(object):
+class RandomGeneratorVC(object):
     def __init__(self, output_size):
         self.output_size = output_size
 
     def __call__(self, sample):
-        image, label = sample['image'], sample['label']
+        image, label, gt = sample['image'], sample['label'], sample['gt']
         # ind = random.randrange(0, img.shape[0])
         # image = img[ind, ...]
         # label = lab[ind, ...]
         if random.random() > 0.5:
-            image, label = random_rot_flip(image, label)
+            image, label, gt = random_rot_flip(image, label, gt)
         elif random.random() > 0.5:
             if 4 in np.unique(label):
-                image, label = random_rotate(image, label, cval=4)
+                image, label, gt = random_rotate(image, label, gt, cval=4)
             else:
-                image, label = random_rotate(image, label, cval=0)
+                image, label, gt = random_rotate(image, label, gt, cval=0)
         x, y = image.shape
         image = zoom(
             image, (self.output_size[0] / x, self.output_size[1] / y), order=0)
         label = zoom(
             label, (self.output_size[0] / x, self.output_size[1] / y), order=0)
+        gt = zoom(
+            gt, (self.output_size[0] / x, self.output_size[1] / y), order=0)
         image = torch.from_numpy(
             image.astype(np.float32)).unsqueeze(0)
         label = torch.from_numpy(label.astype(np.uint8))
-        sample = {'image': image, 'label': label}
+        gt = torch.from_numpy(gt.astype(np.uint8))
+        sample['image'], sample['label'], sample['gt'] = image, label, gt
+        return sample
+    
+def random_rot_flip(image, label, gt):
+    k = np.random.randint(0, 4)
+    image = np.rot90(image, k)
+    label = np.rot90(label, k)
+    gt = np.rot90(gt, k)
+    axis = np.random.randint(0, 2)
+    image = np.flip(image, axis=axis).copy()
+    label = np.flip(label, axis=axis).copy()
+    gt = np.flip(gt, axis=axis).copy()
+    return image, label, gt
+
+
+def random_rotate(image, label, gt, cval):
+    angle = np.random.randint(-20, 20)
+    image = ndimage.rotate(image, angle, order=0, reshape=False)
+    label = ndimage.rotate(label, angle, order=0, reshape=False, mode="constant", cval=cval)
+    gt = ndimage.rotate(gt, angle, order=0, reshape=False, mode="constant", cval=0)
+    return image, label, gt
+    
+class Zoom(object):
+    def __init__(self, output_size):
+        self.output_size = output_size
+
+    def __call__(self, sample):
+        image, label, gt = sample['image'], sample['label'], sample['gt']
+
+        x, y = image.shape
+        image = zoom(
+            image, (self.output_size[0] / x, self.output_size[1] / y), order=0)
+        label = zoom(
+            label, (self.output_size[0] / x, self.output_size[1] / y), order=0)
+        gt = zoom(
+            gt, (self.output_size[0] / x, self.output_size[1] / y), order=0)
+        image = torch.from_numpy(
+            image.astype(np.float32)).unsqueeze(0)
+        label = torch.from_numpy(label.astype(np.uint8))
+        gt = torch.from_numpy(gt.astype(np.uint8))
+        sample['image'], sample['label'], sample['gt'] = image, label, gt
         return sample
 
 
@@ -257,3 +289,10 @@ def grouper(iterable, n):
     return zip(*args)
 
 
+class TwoCropTransform:
+    """Create two crops of the same image"""
+    def __init__(self, transform):
+        self.transform = transform
+
+    def __call__(self, x):
+        return [self.transform(x), self.transform(x)]

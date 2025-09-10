@@ -21,7 +21,7 @@ from torch.utils.data import DataLoader
 from torchvision import transforms
 from tqdm import tqdm
 
-from dataloader.acdc import BaseDataSets_ScribbleVC, RandomGeneratorVC
+from dataloader.acdc_scribblevc import BaseDataSets_ScribbleVC, RandomGeneratorVC
 from torchmetrics.classification import MultilabelAccuracy
 from tool import pyutils
 from utils.gate_crf_loss import ModelLossSemsegGatedCRF
