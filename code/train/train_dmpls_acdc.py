@@ -49,7 +49,7 @@ def parse_args():
     parser.add_argument('--num_classes', type=int,  default=4,
                         help='output channel of network')
     parser.add_argument('--max_iterations', type=int,
-                        default=60000, help='maximum epoch number to train')
+                        default=30000, help='maximum epoch number to train')
     parser.add_argument('--ES_interval', type=int,
                         default=10000, help='maximum iteration iternal for early-stopping')
     parser.add_argument('--batch_size', type=int, default=8,
