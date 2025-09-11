@@ -13,7 +13,7 @@ import torch
 import torch.backends.cudnn as cudnn
 import torch.optim as optim
 from tensorboardX import SummaryWriter
-
+import torch.nn.functional as F
 from torch.nn.modules.loss import CrossEntropyLoss
 from torch.utils.data import DataLoader
 from torchvision import transforms
@@ -22,7 +22,7 @@ from tqdm import tqdm
 from dataloader.acdc import BaseDataSets, RandomGenerator
 from networks.net_factory import net_factory
 from utils import losses, ramps
-from utils.Jigsaw import *
+from utils.Jigsaw import Cutout_min, Jigsaw, RandomBrightnessContrast
 from val import test_single_volume_scribblevs
 
 parser = argparse.ArgumentParser()
@@ -106,6 +106,7 @@ def train(args, snapshot_path):
     best_performance = 0.0
     iterator = tqdm(range(max_epoch), ncols=70)
     alpha = 1.0
+    K = 5
 
     for epoch_num in iterator:
         for i_batch, sampled in enumerate(trainloader):
@@ -113,112 +114,133 @@ def train(args, snapshot_path):
             # Get data
             image = sampled['image'].cuda()   # (B,1,H,W)
             scrib = sampled['label'].cuda()   # (B,H,W) integer; ignore_index=4
+            if scrib.dtype != torch.long:
+                scrib = scrib.long()
 
-            # Triple Augmentation Self-Recovery (TAS)
-            x_i, lbl_i, x_j, perms, x_k = tas_augment(
-                image, scrib,
-                num_x=args.jigsaw_nx, num_y=args.jigsaw_ny,
-                cutout_scale=args.tas_cutout_scale,
-                intensity_p=args.tas_intensity_p,
-                unlabeled_idx=args.ignore_index
-            )
+            # 3 Augment
+            # Cutout
+            scrib = scrib.cuda(non_blocking=True)  
+            scrib_oh = F.one_hot(scrib.clamp(0, K-1), num_classes=K)          # (B,H,W,K)
+            scrib_oh = scrib_oh.permute(0, 3, 1, 2).contiguous().float()
+            img_i, labels_i_oh = Cutout_min(
+                imgs=image,
+                labels=scrib_oh,
+                device=image.device,
+                n_holes=1
+            ) 
+            scrib_i = torch.argmax(labels_i_oh, dim=1)
+            # Jigsaw
+            img_j, shuffle_idx = Jigsaw(image, num_x=2, num_y=2, shuffle_index=None)
+            # Intensity
+            img_k = RandomBrightnessContrast(image)
+            logits_i = model(img_i)   # (B,C,H,W)
+            logits_j_shuf = model(img_j)
+            logits_k = model(img_k)
+            logits_j, _ = Jigsaw(logits_j_shuf, num_x=2, num_y=2, shuffle_index=shuffle_idx)
 
-            # Forward 3 nhánh (shared weights)
-            logits_i = model(x_i)   # (B,C,H,W)
-            logits_j = model(x_j)
-            logits_k = model(x_k)   
+        break
+            # # Triple Augmentation Self-Recovery (TAS)
+            # x_i = Cutout_min(scrib, image, device='cuda',n_holes=1)   
+            # x_j
+            # x_k
 
-            prob_i = torch.softmax(logits_i, dim=1)
-            prob_j = torch.softmax(logits_j, dim=1)
-            prob_k = torch.softmax(logits_k, dim=1)
+            # # Forward 3 nhánh (shared weights)
+            # logits_i = model(x_i)   # (B,C,H,W)
+            # logits_j = model(x_j)
+            # logits_k = model(x_k)   
 
-            
-            outputs = model(volume_batch)
-            outputs_soft1 = torch.softmax(outputs, dim=1)
-            pseudo_label = process_pseudo_label(outputs_soft_ema, tau=args.tau)
-            pseudo_label_stu = process_pseudo_label(outputs_soft1, tau=args.tau)
+            # prob_i = torch.softmax(logits_i, dim=1)
+            # prob_j = torch.softmax(logits_j, dim=1)
+            # prob_k = torch.softmax(logits_k, dim=1)
 
-            loss_ce = ce_loss(outputs, label_batch[:].long())
-            loss_ce_pseudo = ce_loss(ema_output, label_batch[:].long())
-            if loss_ce > loss_ce_pseudo:
-                loss_pseudo_ce = ce_loss(outputs, pseudo_label[:].long())
-                loss_pseudo_dc = dice_loss(outputs_soft1, pseudo_label.unsqueeze(1))
-            else:
-                loss_pseudo_ce = ce_loss(outputs, pseudo_label_stu[:].long())
-                loss_pseudo_dc = dice_loss(outputs_soft1, pseudo_label_stu.unsqueeze(1))
 
-            consistency_weight = get_current_consistency_weight(iter_num // 300)  #150
-            loss_pse_sup = (loss_pseudo_dc+loss_pseudo_ce)*0.5*consistency_weight
-            loss = loss_ce + loss_pse_sup
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-            ema_optimizer.step()
-            lr_ = base_lr * (1.0 - iter_num / max_iterations) ** 0.9
-            for param_group in optimizer.param_groups:
-                param_group['lr'] = lr_
+            # outputs = model(volume_batch)
+            # outputs_soft1 = torch.softmax(outputs, dim=1)
+            # pseudo_label = process_pseudo_label(outputs_soft_ema, tau=args.tau)
+            # pseudo_label_stu = process_pseudo_label(outputs_soft1, tau=args.tau)
 
-            iter_num = iter_num + 1
-            writer.add_scalar('info/lr', lr_, iter_num)
-            writer.add_scalar('info/total_loss', loss, iter_num)
-            writer.add_scalar('info/consistency_weight', consistency_weight, iter_num)
-            writer.add_scalar('info/loss_ce', loss_ce, iter_num)
-            if iter_num % 200 ==0:
-                logging.info(
-                'iteration %d : loss : %f, loss_ce: %f, loss_pse_sup: %f, alpha: %f' %
-                (iter_num, loss.item(), loss_ce.item(), loss_pse_sup.item(), alpha))
+            # loss_ce = ce_loss(outputs, label_batch[:].long())
+            # loss_ce_pseudo = ce_loss(ema_output, label_batch[:].long())
+            # if loss_ce > loss_ce_pseudo:
+            #     loss_pseudo_ce = ce_loss(outputs, pseudo_label[:].long())
+            #     loss_pseudo_dc = dice_loss(outputs_soft1, pseudo_label.unsqueeze(1))
+            # else:
+            #     loss_pseudo_ce = ce_loss(outputs, pseudo_label_stu[:].long())
+            #     loss_pseudo_dc = dice_loss(outputs_soft1, pseudo_label_stu.unsqueeze(1))
 
-            if iter_num > 1 and iter_num % 200 == 0:
-                model.eval()
-                metric_list = 0.0
-                for i_batch, sampled_batch in enumerate(valloader):
-                    metric_i = test_single_volume_scribblevs(
-                        sampled_batch["image"], sampled_batch["label"], model, classes=num_classes)
-                    metric_list += np.array(metric_i)
-                metric_list = metric_list / len(db_val)
-                for class_i in range(num_classes-1):
-                    writer.add_scalar('info/val_{}_dice'.format(class_i+1),
-                                      metric_list[class_i, 0], iter_num)
-                    writer.add_scalar('info/val_{}_hd95'.format(class_i+1),
-                                      metric_list[class_i, 1], iter_num)
+            # consistency_weight = get_current_consistency_weight(iter_num // 300)  #150
+            # loss_pse_sup = (loss_pseudo_dc+loss_pseudo_ce)*0.5*consistency_weight
+            # loss = loss_ce + loss_pse_sup
+            # optimizer.zero_grad()
+            # loss.backward()
+            # optimizer.step()
 
-                performance = np.mean(metric_list, axis=0)[0]
 
-                mean_hd95 = np.mean(metric_list, axis=0)[1]
-                writer.add_scalar('info/val_mean_dice', performance, iter_num)
-                writer.add_scalar('info/val_mean_hd95', mean_hd95, iter_num)
+        #     lr_ = base_lr * (1.0 - iter_num / max_iterations) ** 0.9
+        #     for param_group in optimizer.param_groups:
+        #         param_group['lr'] = lr_
 
-                if performance > best_performance:
-                    best_performance = performance
-                    save_mode_path = os.path.join(snapshot_path,
-                                                  'iter_{}_dice_{}.pth'.format(
-                                                      iter_num, round(best_performance, 4)))
-                    save_best = os.path.join(snapshot_path,
-                                             '{}_best_model.pth'.format(args.model))
-                    torch.save(model.state_dict(), save_mode_path)
-                    torch.save(model.state_dict(), save_best)
+        #     iter_num = iter_num + 1
+        #     writer.add_scalar('info/lr', lr_, iter_num)
+        #     writer.add_scalar('info/total_loss', loss, iter_num)
+        #     writer.add_scalar('info/consistency_weight', consistency_weight, iter_num)
+        #     writer.add_scalar('info/loss_ce', loss_ce, iter_num)
+        #     if iter_num % 200 ==0:
+        #         logging.info(
+        #         'iteration %d : loss : %f, loss_ce: %f, loss_pse_sup: %f, alpha: %f' %
+        #         (iter_num, loss.item(), loss_ce.item(), loss_pse_sup.item(), alpha))
 
-                logging.info(
-                    'iteration %d : mean_dice : %f mean_hd95 : %f' % (iter_num, performance, mean_hd95))
-                model.train()
+        #     if iter_num > 1 and iter_num % 200 == 0:
+        #         model.eval()
+        #         metric_list = 0.0
+        #         for i_batch, sampled_batch in enumerate(valloader):
+        #             metric_i = test_single_volume_scribblevs(
+        #                 sampled_batch["image"], sampled_batch["label"], model, classes=num_classes)
+        #             metric_list += np.array(metric_i)
+        #         metric_list = metric_list / len(db_val)
+        #         for class_i in range(num_classes-1):
+        #             writer.add_scalar('info/val_{}_dice'.format(class_i+1),
+        #                               metric_list[class_i, 0], iter_num)
+        #             writer.add_scalar('info/val_{}_hd95'.format(class_i+1),
+        #                               metric_list[class_i, 1], iter_num)
 
-            if iter_num > 0 and iter_num % 500 == 0:
-                if alpha > 0.01:
-                    alpha = alpha - 0.01
-                else:
-                    alpha = 0.01
+        #         performance = np.mean(metric_list, axis=0)[0]
 
-            if iter_num % 3000 == 0:
-                save_mode_path = os.path.join(
-                    snapshot_path, 'iter_' + str(iter_num) + '.pth')
-                torch.save(model.state_dict(), save_mode_path)
-                logging.info("save model to {}".format(save_mode_path))
+        #         mean_hd95 = np.mean(metric_list, axis=0)[1]
+        #         writer.add_scalar('info/val_mean_dice', performance, iter_num)
+        #         writer.add_scalar('info/val_mean_hd95', mean_hd95, iter_num)
 
-            if iter_num >= max_iterations:
-                break
-        if iter_num >= max_iterations:
-            iterator.close()
-            break
+        #         if performance > best_performance:
+        #             best_performance = performance
+        #             save_mode_path = os.path.join(snapshot_path,
+        #                                           'iter_{}_dice_{}.pth'.format(
+        #                                               iter_num, round(best_performance, 4)))
+        #             save_best = os.path.join(snapshot_path,
+        #                                      '{}_best_model.pth'.format(args.model))
+        #             torch.save(model.state_dict(), save_mode_path)
+        #             torch.save(model.state_dict(), save_best)
+
+        #         logging.info(
+        #             'iteration %d : mean_dice : %f mean_hd95 : %f' % (iter_num, performance, mean_hd95))
+        #         model.train()
+
+        #     if iter_num > 0 and iter_num % 500 == 0:
+        #         if alpha > 0.01:
+        #             alpha = alpha - 0.01
+        #         else:
+        #             alpha = 0.01
+
+        #     if iter_num % 3000 == 0:
+        #         save_mode_path = os.path.join(
+        #             snapshot_path, 'iter_' + str(iter_num) + '.pth')
+        #         torch.save(model.state_dict(), save_mode_path)
+        #         logging.info("save model to {}".format(save_mode_path))
+
+        #     if iter_num >= max_iterations:
+        #         break
+        # if iter_num >= max_iterations:
+        #     iterator.close()
+        #     break
     writer.close()
     return "Training Finished!"
 
