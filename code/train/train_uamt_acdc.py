@@ -66,6 +66,54 @@ def parse_args():
     args = parser.parse_args()
     return args
 
+
+def sample_transform():
+    rot_k  = random.randrange(0, 4)
+    hflip  = random.random() < 0.5
+    vflip  = random.random() < 0.5
+    scale  = 0.8 + 0.4 * random.random()
+    return rot_k, hflip, vflip, scale
+
+def apply_T_to_img(x, rot_k, hflip, vflip, scale):
+    # x: [B,1,H,W], float
+    B, C, H, W = x.shape
+    # scale (bilinear)
+    if scale != 1.0:
+        Hs = max(1, int(round(H * scale)))
+        Ws = max(1, int(round(W * scale)))
+        x = F.interpolate(x, size=(Hs, Ws), mode='bilinear', align_corners=False)
+    # flips
+    if hflip: x = torch.flip(x, dims=[3])
+    if vflip: x = torch.flip(x, dims=[2])
+    # rotate 90°×k
+    if rot_k > 0: x = torch.rot90(x, k=rot_k, dims=[2, 3])
+    return x
+
+def apply_T_to_logits(logits, rot_k, hflip, vflip, scale):
+    # logits: [B,C,H,W], bilinear cho feature/logits
+    B, Cc, H, W = logits.shape
+    if scale != 1.0:
+        Hs = max(1, int(round(H * scale)))
+        Ws = max(1, int(round(W * scale)))
+        logits = F.interpolate(logits, size=(Hs, Ws), mode='bilinear', align_corners=False)
+    if hflip: logits = torch.flip(logits, dims=[3])
+    if vflip: logits = torch.flip(logits, dims=[2])
+    if rot_k > 0: logits = torch.rot90(logits, k=rot_k, dims=[2, 3])
+    return logits
+
+def apply_T_to_label(y, rot_k, hflip, vflip, scale):
+    # y: [B,H,W], long; nearest cho nhãn
+    B, H, W = y.shape
+    yf = y.float().unsqueeze(1)  # [B,1,H,W]
+    if scale != 1.0:
+        Hs = max(1, int(round(H * scale)))
+        Ws = max(1, int(round(W * scale)))
+        yf = F.interpolate(yf, size=(Hs, Ws), mode='nearest')
+    if hflip: yf = torch.flip(yf, dims=[3])
+    if vflip: yf = torch.flip(yf, dims=[2])
+    if rot_k > 0: yf = torch.rot90(yf, k=rot_k, dims=[2, 3])
+    return yf.squeeze(1).long()
+
 def get_current_consistency_weight(epoch):
     # Consistency ramp-up from https://arxiv.org/abs/1610.02242
     return 1.0 * ramps.sigmoid_rampup(epoch, 60)
@@ -76,6 +124,15 @@ def update_ema_variables(model, ema_model, alpha, global_step):
     alpha = min(1 - 1 / (global_step + 1), alpha)
     for ema_param, param in zip(ema_model.parameters(), model.parameters()):
         ema_param.data.mul_(alpha).add_(1 - alpha, param.data)
+
+def create_model(ema=False):
+    # Network definition
+    model = net_factory(net_type=args.model, in_chns=1,
+                        class_num=4)
+    if ema:
+        for param in model.parameters():
+            param.detach_()
+    return model
 
 def train(args, snapshot_path):
 
@@ -91,15 +148,10 @@ def train(args, snapshot_path):
     num_classes = args.num_classes
     max_iterations = args.max_iterations
     ES_interval = args.ES_interval
-
-    def create_model(ema=False):
-        # Network definition
-        model = net_factory(net_type=args.model, in_chns=1,
-                            class_num=num_classes)
-        if ema:
-            for param in model.parameters():
-                param.detach_()
-        return model
+    ema_decay       = 0.99                      # paper dùng 0.99
+    T_MC            = 8                         # số lần MC-Dropout
+    C               = num_classes               # cho entropy (C=2)
+    lnC             = float(np.log(C))
 
     # Create model
     model = create_model()
@@ -146,55 +198,65 @@ def train(args, snapshot_path):
 
     # Training
     model.train()
+    ema_model.train()
+
+    def gaussian_rampup(t, t_max):
+        # lambda(t) = 0.1 * exp(-5 * (1 - t/t_max)^2) (theo paper)
+        return 0.1 * np.exp(-5.0 * (1.0 - float(t) / float(max(1, t_max)))**2)
+
+    def tau_threshold(t, t_max):
+        # ramp từ 0.75*lnC -> lnC (dùng cùng dạng gaussian cho mượt)
+        base = 0.75 * lnC
+        return base + (lnC - base) * np.exp(-5.0 * (1.0 - float(t) / float(max(1, t_max)))**2)
+    
     iterator = tqdm(range(max_epoch), ncols=70)
     for epoch_num in iterator:
         for iter, sampled_batch in enumerate(trainloader):
 
             img, label = sampled_batch['image'], sampled_batch['label']
             img, label = img.cuda(), label.cuda()
-
-            outputs = model(img)
-            loss_ce = ce_loss(outputs, label.long())
+            rot_k, hflip, vflip, scale = sample_transform()
+            student_logits = model(img) 
+            student_logits_T = apply_T_to_logits(student_logits, rot_k, hflip, vflip, scale)
+            label_T = apply_T_to_label(label, rot_k, hflip, vflip, scale)
+            # Supervised loss on scribbled pixels after T ----
+            loss_ce = ce_loss(student_logits_T, label_T)
             supervised_loss = loss_ce
 
-            rot_times = random.randrange(0, 4)
-            rotated_volume_batch = torch.rot90(img, rot_times, [2, 3])
-            noise = torch.clamp(torch.randn_like(
-                rotated_volume_batch) * 0.1, -0.2, 0.2)
-            
+            # Teacher MC-Dropout
             with torch.no_grad():
-                ema_inputs = rotated_volume_batch + noise
-                ema_output = ema_model(ema_inputs)
-            T = 8
-            _, _, w, h = img.shape
-            volume_batch_r = rotated_volume_batch.repeat(2, 1, 1, 1)
-            stride = volume_batch_r.shape[0] // 2
-            preds = torch.zeros([stride * T, num_classes, w, h]).cuda()
-            for i in range(T // 2):
-                ema_inputs = volume_batch_r + \
-                    torch.clamp(torch.randn_like(
-                        volume_batch_r) * 0.1, -0.2, 0.2)
-                with torch.no_grad():
-                    preds[2 * stride * i:2 * stride *
-                          (i + 1)] = ema_model(ema_inputs)
-            preds = F.softmax(preds, dim=1)
-            preds = preds.reshape(T, stride, num_classes, w, h)
-            preds = torch.mean(preds, dim=0)
-            uncertainty = -1.0 * \
-                torch.sum(preds * torch.log(preds + 1e-6), dim=1, keepdim=True)
-            consistency_weight = get_current_consistency_weight(
-                iter_num // 1000)
-            
-            rotated_ouputs = torch.rot90(outputs, rot_times, [2, 3])
-            consistency_dist = losses.softmax_mse_loss(
-                rotated_ouputs, ema_output)
-            threshold = (0.75 + 0.25 * ramps.sigmoid_rampup(iter_num,
-                                                            max_iterations)) * np.log(2)
-            mask = (uncertainty < threshold).float()
-            consistency_loss = torch.sum(
-                mask * consistency_dist) / (2 * torch.sum(mask) + 1e-16)
+                # Chuẩn bị input cho teacher (ảnh + noise nhẹ)
+                img_T = apply_T_to_img(img, rot_k, hflip, vflip, scale)  # [B,1,H',W']
+                B, C1, Ht, Wt = img_T.shape
+                # gom logits qua T_MC lần
+                mc_probs = []
+                for i in range(T_MC):
+                    noise = torch.clamp(torch.randn_like(img_T) * 0.1, -0.2, 0.2)
+                    logits_t = ema_model(img_T + noise)                  # [B,C,H',W'] với dropout on
+                    probs_t  = F.softmax(logits_t, dim=1)
+                    mc_probs.append(probs_t)
+                # mean probs
+                teacher_mean_probs = torch.stack(mc_probs, dim=0).mean(dim=0)  # [B,C,H',W']
 
+                # predictive entropy (uncertainty)
+                entropy = - torch.sum(teacher_mean_probs * torch.log(teacher_mean_probs + 1e-6), dim=1, keepdim=True)  # [B,1,H',W']
+
+            # Consistency loss: MSE giữa probs(student_T) và mean_probs(teacher_T)
+            student_probs_T = F.softmax(student_logits_T, dim=1)                  # [B,C,H',W']
+            consistency_dist = (student_probs_T - teacher_mean_probs).pow(2).sum(dim=1, keepdim=True)
+
+            # ngưỡng τ ramp-up từ 0.75 lnC -> lnC
+            tau = tau_threshold(iter_num, max_iterations)
+            mask = (entropy < tau).float()                               
+
+            # trung bình trên vùng mask (tránh chia 0)
+            denom = torch.clamp(mask.sum(), min=1.0)
+            consistency_loss = (mask * consistency_dist).sum() / denom
+
+            # ---- 5) Tổng loss với Gaussian ramp-up lambda(t) ----
+            consistency_weight = gaussian_rampup(iter_num, max_iterations)
             loss = supervised_loss + consistency_weight * consistency_loss
+
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
@@ -208,13 +270,12 @@ def train(args, snapshot_path):
             iter_num = iter_num + 1
             writer.add_scalar('info/lr', lr_, iter_num)
             writer.add_scalar('info/total_loss', loss, iter_num)
-            writer.add_scalar('info/loss_ce', loss_ce, iter_num)
             
             # Validation
             if iter_num > 0 and iter_num % 200 == 0:
                 logging.info(
-                    'iteration %d : loss : %f, loss_ce: %f' 
-                    %(iter_num, loss.item(), loss_ce.item()))
+                    'iteration %d : loss : %f' 
+                    %(iter_num, loss.item()))
                 
                 model.eval()
                 metric_list = test_all_case_2D(valloader, model, args)
