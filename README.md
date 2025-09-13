@@ -32,12 +32,47 @@ This repository provides re-implementations of some papers about scribble-superv
 ## 📊  Benchmark on ACDC
 
 
-| Method        | LV Dice ↑ | LV HD95 ↓ | RV Dice ↑ | RV HD95 ↓ | MYO Dice ↑ | MYO HD95 ↓ | **Mean Dice ↑** | **Mean HD95 ↓** |
-|---------------|-----------|-----------|-----------|-----------|-------------|-------------|-----------------|-----------------|
-| **TABNet**    | 88.18     | 1.82      | 86.78     | 1.24      | 92.78       | 2.48        | **89.25**       | **1.85**        |
-| **ScribbleVS**| 87.97     | 1.47      | 86.17     | 5.17      | 92.80       | 1.21        | **88.98**       | **2.62**        |
-| **DMSPS**     | 87.98     | 1.50      | 85.07     | 5.90      | 92.31       | 6.55        | **88.45**       | **4.65**        |
-| **DMPLS**     | 87.17     | 1.76      | 84.22     | 9.31      | 91.69       | 6.60        | **87.69**       | **5.89**        |
+<table style="border-collapse: collapse; text-align: center;">
+  <thead>
+    <tr>
+      <th style="border: 1px solid black; padding: 6px;">Method</th>
+      <th style="border: 1px solid black; padding: 6px;">LV<br>(Dice / HD95)</th>
+      <th style="border: 1px solid black; padding: 6px;">RV<br>(Dice / HD95)</th>
+      <th style="border: 1px solid black; padding: 6px;">MYO<br>(Dice / HD95)</th>
+      <th style="border: 1px solid black; padding: 6px;">Mean<br>(Dice / HD95)</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td style="border: 1px solid black; padding: 6px;"><b>TABNet</b></td>
+      <td style="border: 1px solid black; padding: 6px;">88.18 / 1.82</td>
+      <td style="border: 1px solid black; padding: 6px;">86.78 / 1.24</td>
+      <td style="border: 1px solid black; padding: 6px;">92.78 / 2.48</td>
+      <td style="border: 1px solid black; padding: 6px;"><b>89.25 / 1.85</b></td>
+    </tr>
+    <tr>
+      <td style="border: 1px solid black; padding: 6px;"><b>ScribbleVS</b></td>
+      <td style="border: 1px solid black; padding: 6px;">87.97 / 1.47</td>
+      <td style="border: 1px solid black; padding: 6px;">86.17 / 5.17</td>
+      <td style="border: 1px solid black; padding: 6px;">92.80 / 1.21</td>
+      <td style="border: 1px solid black; padding: 6px;">88.98 / 2.62</td>
+    </tr>
+    <tr>
+      <td style="border: 1px solid black; padding: 6px;"><b>DMSPS</b></td>
+      <td style="border: 1px solid black; padding: 6px;">87.98 / 1.50</td>
+      <td style="border: 1px solid black; padding: 6px;">85.07 / 5.90</td>
+      <td style="border: 1px solid black; padding: 6px;">92.31 / 6.55</td>
+      <td style="border: 1px solid black; padding: 6px;">88.45 / 4.65</td>
+    </tr>
+    <tr>
+      <td style="border: 1px solid black; padding: 6px;"><b>DMPLS</b></td>
+      <td style="border: 1px solid black; padding: 6px;">87.17 / 1.76</td>
+      <td style="border: 1px solid black; padding: 6px;">84.22 / 9.31</td>
+      <td style="border: 1px solid black; padding: 6px;">91.69 / 6.60</td>
+      <td style="border: 1px solid black; padding: 6px;">87.69 / 5.89</td>
+    </tr>
+  </tbody>
+</table>
 
 
 
