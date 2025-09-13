@@ -29,22 +29,22 @@ This repository provides re-implementations of some papers about scribble-superv
    ✅ Status: Done  
 
 
-### Benchmark on ACDC
+## 📊  Benchmark on ACDC
 
-| Method    | LV Dice ↑ | LV HD95 ↓ | RV Dice ↑ | RV HD95 ↓ | MYO Dice ↑ | MYO HD95 ↓ | **Mean Dice ↑** | **Mean HD95 ↓** |
-|-----------|-----------|-----------|-----------|-----------|-------------|-------------|-----------------|-----------------|
-| **TABNet** | 0.882     | 1.818     | 0.868     | 1.244     | 0.928       | 2.476       | **0.892**       | **1.846**       |
-| **DMSPS**  | 0.880     | 1.503     | 0.851     | 5.899     | 0.923       | 6.548       | **0.885**       | **4.650**       |
-| **DMPLS**  | 0.872     | 1.760     | 0.842     | 9.314     | 0.917       | 6.605       | **0.877**       | **5.893**       |
+
+| Method        | LV Dice ↑ | LV HD95 ↓ | RV Dice ↑ | RV HD95 ↓ | MYO Dice ↑ | MYO HD95 ↓ | **Mean Dice ↑** | **Mean HD95 ↓** |
+|---------------|-----------|-----------|-----------|-----------|-------------|-------------|-----------------|-----------------|
+| **TABNet**    | 88.18     | 1.82      | 86.78     | 1.24      | 92.78       | 2.48        | **89.25**       | **1.85**        |
+| **ScribbleVS**| 87.97     | 1.47      | 86.17     | 5.17      | 92.80       | 1.21        | **88.98**       | **2.62**        |
+| **DMSPS**     | 87.98     | 1.50      | 85.07     | 5.90      | 92.31       | 6.55        | **88.45**       | **4.65**        |
+| **DMPLS**     | 87.17     | 1.76      | 84.22     | 9.31      | 91.69       | 6.60        | **87.69**       | **5.89**        |
+
 
 
 
 
 ### Tasks
-- Fix bug ShapePU
-- Run UAMT
-- Run DMSPS Stage2
-- Run test for all methods
+- Test ScribbleVC, Scribformer, DMSPS stage2
 
 ### Acknowledgement
 This repo partially uses code from [Hilab-WSL4MIS](https://github.com/HiLab-git/WSL4MIS) and [ShapePU](https://github.com/BWGZK/ShapePU)

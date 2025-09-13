@@ -23,7 +23,7 @@ parser.add_argument('--root_path', type=str,
 parser.add_argument('--exp', type=str,
                     default='ACDC/Fully_Supervised', help='experiment_name')
 parser.add_argument('--model', type=str,
-                    default='unet_cct', help='model_name')
+                    default='unet', help='model_name')
 parser.add_argument('--num_classes', type=int,  default=4,
                     help='output channel of network')
 
@@ -81,8 +81,8 @@ def Inference(FLAGS):
         image_list = f.readlines()
     image_list = sorted([item.replace('\n', '').split(".")[0]
                          for item in image_list])
-    save_mode_path = "../../checkpoints/ACDC_DMPLS/unet_cct_best_model.pth"
-    test_save_path = "../../results/ACDC_DMPLS"
+    save_mode_path = "../../checkpoints/ACDC_ScribbleVS/unet_best_model.pth"
+    test_save_path = "../../results/ACDC_ScribbleVS"
     if os.path.exists(test_save_path):
         shutil.rmtree(test_save_path)
     os.makedirs(test_save_path)
