@@ -19,18 +19,18 @@ from torch.utils.data import DataLoader
 from torchvision import transforms
 from tqdm import tqdm
 
-from dataloader.acdc import BaseDataSets, RandomGenerator
+from dataloader.mscmr import MSCMRDataSets, RandomGenerator
 from networks.net_factory import net_factory
 from utils import losses, ramps
 from val import test_single_volume_scribblevs
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--root_path', type=str,
-                    default='../../data/ACDC', help='Name of Experiment')
+                    default='../../data/MSCMR', help='Name of Experiment')
 parser.add_argument('--exp', type=str,
-                    default='ACDC_ScribbleVS', help='experiment_name')
+                    default='MSCMR_ScribbleVS', help='experiment_name')
 parser.add_argument('--data', type=str,
-                    default='ACDC', help='experiment_name')
+                    default='MSCMR', help='experiment_name')
 parser.add_argument('--tau', type=float,
                     default=0.5, help='experiment_name')
 parser.add_argument('--fold', type=str,
@@ -42,7 +42,7 @@ parser.add_argument('--model', type=str,
 parser.add_argument('--num_classes', type=int,  default=4,
                     help='output channel of network')
 parser.add_argument('--max_iterations', type=int,
-                    default=30000, help='maximum epoch number to train')
+                    default=60000, help='maximum epoch number to train')
 parser.add_argument('--batch_size', type=int, default=8,
                     help='batch_size per gpu')
 parser.add_argument('--deterministic', type=int,  default=1,
@@ -101,10 +101,10 @@ def train(args, snapshot_path):
     model = create_model(ema=False,num_classes=4)
     model_ema = create_model(ema=True, num_classes=4)
 
-    db_train = BaseDataSets(base_dir=args.root_path, split="train", transform=transforms.Compose([
+    db_train = MSCMRDataSets(base_dir=args.root_path, split="train", transform=transforms.Compose([
         RandomGenerator(args.patch_size)
-    ]), fold=args.fold, sup_type=args.sup_type)
-    db_val = BaseDataSets(base_dir=args.root_path, fold=args.fold, split="val")
+    ]), sup_type=args.sup_type)
+    db_val = MSCMRDataSets(base_dir=args.root_path, split="val")
 
     def worker_init_fn(worker_id):
         random.seed(args.seed + worker_id)
@@ -169,7 +169,7 @@ def train(args, snapshot_path):
             writer.add_scalar('info/total_loss', loss, iter_num)
             writer.add_scalar('info/consistency_weight', consistency_weight, iter_num)
             writer.add_scalar('info/loss_ce', loss_ce, iter_num)
-            if iter_num % 200 == 0:
+            if iter_num % 200 ==0:
                 logging.info(
                 'iteration %d : loss : %f, loss_ce: %f, loss_pse_sup: %f, alpha: %f' %
                 (iter_num, loss.item(), loss_ce.item(), loss_pse_sup.item(), alpha))
