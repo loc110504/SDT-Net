@@ -123,6 +123,7 @@ def train(args, snapshot_path):
 
     writer = SummaryWriter(snapshot_path + '/log')
     logging.info("{} iterations per epoch".format(len(trainloader)))
+    print(len(trainloader))
 
     iter_num = 0
     max_epoch = max_iterations // len(trainloader) + 1
@@ -152,7 +153,7 @@ def train(args, snapshot_path):
                 loss_pseudo_ce = ce_loss(outputs, pseudo_label_stu[:].long())
                 loss_pseudo_dc = dice_loss(outputs_soft1, pseudo_label_stu.unsqueeze(1))
 
-            consistency_weight = get_current_consistency_weight(iter_num // 300)  #150
+            consistency_weight = get_current_consistency_weight(iter_num // 150)  #150
             loss_pse_sup = (loss_pseudo_dc+loss_pseudo_ce)*0.5*consistency_weight
             loss = loss_ce + loss_pse_sup
             optimizer.zero_grad()
