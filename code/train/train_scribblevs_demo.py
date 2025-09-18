@@ -42,7 +42,7 @@ parser.add_argument('--model', type=str,
 parser.add_argument('--num_classes', type=int,  default=4,
                     help='output channel of network')
 parser.add_argument('--max_iterations', type=int,
-                    default=30000, help='maximum epoch number to train')
+                    default=60000, help='maximum epoch number to train')
 parser.add_argument('--batch_size', type=int, default=8,
                     help='batch_size per gpu')
 parser.add_argument('--deterministic', type=int,  default=1,
@@ -56,9 +56,6 @@ parser.add_argument('--gpu', type=str, default='0', help='GPU to use')
 args = parser.parse_args()
 os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
 
-def get_current_consistency_weight(epoch):
-    # Consistency ramp-up from https://arxiv.org/abs/1610.02242
-    return 1 * ramps.sigmoid_rampup(epoch, 20)
 
 def create_model(ema=False,num_classes=4):
     # Network definition
@@ -153,8 +150,7 @@ def train(args, snapshot_path):
                 loss_pseudo_ce = ce_loss(outputs, pseudo_label_stu[:].long())
                 loss_pseudo_dc = dice_loss(outputs_soft1, pseudo_label_stu.unsqueeze(1))
 
-            consistency_weight = get_current_consistency_weight(iter_num // len(trainloader))  #150
-            loss_pse_sup = (loss_pseudo_dc+loss_pseudo_ce)*0.5*consistency_weight
+            loss_pse_sup = (loss_pseudo_dc+loss_pseudo_ce)*0.5
             loss = loss_ce + loss_pse_sup
             optimizer.zero_grad()
             loss.backward()
@@ -167,7 +163,6 @@ def train(args, snapshot_path):
             iter_num = iter_num + 1
             writer.add_scalar('info/lr', lr_, iter_num)
             writer.add_scalar('info/total_loss', loss, iter_num)
-            writer.add_scalar('info/consistency_weight', consistency_weight, iter_num)
             writer.add_scalar('info/loss_ce', loss_ce, iter_num)
             if iter_num % 200 ==0:
                 logging.info(

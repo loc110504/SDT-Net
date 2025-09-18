@@ -58,7 +58,7 @@ os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
 
 def get_current_consistency_weight(epoch):
     # Consistency ramp-up from https://arxiv.org/abs/1610.02242
-    return 1 * ramps.sigmoid_rampup(epoch, 250)
+    return 1 * ramps.sigmoid_rampup(epoch, 40)
 
 def create_model(ema=False,num_classes=4):
     # Network definition
@@ -153,7 +153,7 @@ def train(args, snapshot_path):
                 loss_pseudo_ce = ce_loss(outputs, pseudo_label_stu[:].long())
                 loss_pseudo_dc = dice_loss(outputs_soft1, pseudo_label_stu.unsqueeze(1))
 
-            consistency_weight = get_current_consistency_weight(iter_num // len(trainloader))  #150
+            consistency_weight = get_current_consistency_weight(iter_num // 300)  #150
             loss_pse_sup = (loss_pseudo_dc+loss_pseudo_ce)*0.5*consistency_weight
             loss = loss_ce + loss_pse_sup
             optimizer.zero_grad()
