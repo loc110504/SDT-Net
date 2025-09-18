@@ -46,34 +46,17 @@ class MSCMRDataSets(Dataset):
         self.split = split
         self.sup_type = sup_type
         self.transform = transform
-        train_ids, test_ids = self._get_fold_ids()
+
         if self.split == 'train':
-            self.all_slices = os.listdir(
-                self._base_dir + "/MSCMR_training_slices")
-            self.sample_list = []
-            for ids in train_ids:
-                new_data_list = list(filter(lambda x: re.match(
-                    '{}.*'.format(ids), x) != None, self.all_slices))
-                self.sample_list.extend(new_data_list)
+            self.sample_list = os.listdir(
+                os.path.join(self._base_dir, "MSCMR_training_slices")
+            )
 
         elif self.split == 'val':
-            self.all_volumes = os.listdir(
-                self._base_dir + "/MSCMR_training_volumes")
-            self.sample_list = []
-            for ids in test_ids:
-                new_data_list = list(filter(lambda x: re.match(
-                    '{}.*'.format(ids), x) != None, self.all_volumes))
-                self.sample_list.extend(new_data_list)
-
-        # if num is not None and self.split == "train":
-        #     self.sample_list = self.sample_list[:num]
+            self.sample_list = os.listdir(
+                self._base_dir + "/MSCMR_validation_volumes")
+                
         print("total {} samples".format(len(self.sample_list)))
-
-    def _get_fold_ids(self):
-        training_set = ["patient{:0>3}".format(i) for i in
-                        [13, 14, 15, 18, 19, 20, 21, 22, 24, 25, 26, 27, 2, 31, 32, 34, 37, 39, 42, 44, 45, 4, 6, 7, 9]]
-        validation_set = ["patient{:0>3}".format(i) for i in [1, 29, 36, 41, 8]]
-        return [training_set, validation_set]
 
     def __len__(self):
         return len(self.sample_list)
