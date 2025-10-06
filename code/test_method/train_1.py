@@ -19,7 +19,7 @@ from torch.utils.data import DataLoader
 from torchvision import transforms
 from tqdm import tqdm
 
-from dataloader.acdc import BaseDataSets, RandomGenerator
+from dataloader.mscmr import MSCMRDataSets, RandomGenerator
 from networks.net_factory import net_factory
 from utils import losses, ramps
 from val import test_single_volume_unethl
@@ -27,11 +27,11 @@ import torch.nn.functional as F
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--root_path', type=str,
-                    default='../../data/ACDC', help='Name of Experiment')
+                    default='../../data/MSCMR', help='Name of Experiment')
 parser.add_argument('--exp', type=str,
                     default='UnetHL_con', help='experiment_name')
 parser.add_argument('--data', type=str,
-                    default='ACDC', help='experiment_name')
+                    default='MSCMR', help='experiment_name')
 parser.add_argument('--tau', type=float,
                     default=0.5, help='experiment_name')
 parser.add_argument('--fold', type=str,
@@ -102,10 +102,10 @@ def train(args, snapshot_path):
     model = create_model(ema=False,num_classes=4)
     model_ema = create_model(ema=True, num_classes=4)
 
-    db_train = BaseDataSets(base_dir=args.root_path, split="train", transform=transforms.Compose([
+    db_train = MSCMRDataSets(base_dir=args.root_path, split="train", transform=transforms.Compose([
         RandomGenerator(args.patch_size)
     ]), fold=args.fold, sup_type=args.sup_type)
-    db_val = BaseDataSets(base_dir=args.root_path, fold=args.fold, split="val")
+    db_val = MSCMRDataSets(base_dir=args.root_path, fold=args.fold, split="val")
 
     def worker_init_fn(worker_id):
         random.seed(args.seed + worker_id)

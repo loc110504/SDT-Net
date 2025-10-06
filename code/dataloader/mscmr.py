@@ -83,7 +83,7 @@ class MSCMRDataSets(Dataset):
         else:
             image = h5f['image'][:]
             label = h5f['label'][:]
-            sample = {'image': image, 'label': label}
+            sample = {'image': image, 'label': label.astype(np.int64)}
         sample["idx"] = idx
         return sample
     
