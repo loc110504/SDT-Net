@@ -18,20 +18,20 @@ from torch.nn.modules.loss import CrossEntropyLoss
 from torch.utils.data import DataLoader
 from torchvision import transforms
 from tqdm import tqdm
-import torch.nn.functional as F
-from dataloader.mscmr import MSCMRDataSets, RandomGenerator
+
+from dataloader.acdc import BaseDataSets, RandomGenerator
 from networks.net_factory import net_factory
 from utils import losses, ramps
-from utils.Jigsaw import  exrct_boundary, BoundaryLoss
-from val import test_single_volume_scribblevs
+from val import test_single_volume_unethl
+import torch.nn.functional as F
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--root_path', type=str,
-                    default='../../data/MSCMR', help='Name of Experiment')
+                    default='../../data/ACDC', help='Name of Experiment')
 parser.add_argument('--exp', type=str,
-                    default='MT+BAP', help='experiment_name')
+                    default='Unet_HL1', help='experiment_name')
 parser.add_argument('--data', type=str,
-                    default='MSCMR', help='experiment_name')
+                    default='ACDC', help='experiment_name')
 parser.add_argument('--tau', type=float,
                     default=0.5, help='experiment_name')
 parser.add_argument('--fold', type=str,
@@ -39,7 +39,7 @@ parser.add_argument('--fold', type=str,
 parser.add_argument('--sup_type', type=str,
                     default='scribble', help='supervision type')
 parser.add_argument('--model', type=str,
-                    default='unet', help='model_name')
+                    default='unet_hl', help='model_name')
 parser.add_argument('--num_classes', type=int,  default=4,
                     help='output channel of network')
 parser.add_argument('--max_iterations', type=int,
@@ -56,6 +56,10 @@ parser.add_argument('--seed', type=int,  default=2022, help='random seed')
 parser.add_argument('--gpu', type=str, default='0', help='GPU to use')
 args = parser.parse_args()
 os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
+
+def get_current_consistency_weight(epoch):
+    # Consistency ramp-up from https://arxiv.org/abs/1610.02242
+    return 1 * ramps.sigmoid_rampup(epoch, 40)
 
 def create_model(ema=False,num_classes=4):
     # Network definition
@@ -98,10 +102,10 @@ def train(args, snapshot_path):
     model = create_model(ema=False,num_classes=4)
     model_ema = create_model(ema=True, num_classes=4)
 
-    db_train = MSCMRDataSets(base_dir=args.root_path, split="train", transform=transforms.Compose([
+    db_train = BaseDataSets(base_dir=args.root_path, split="train", transform=transforms.Compose([
         RandomGenerator(args.patch_size)
     ]), fold=args.fold, sup_type=args.sup_type)
-    db_val = MSCMRDataSets(base_dir=args.root_path, fold=args.fold, split="val")
+    db_val = BaseDataSets(base_dir=args.root_path, fold=args.fold, split="val")
 
     def worker_init_fn(worker_id):
         random.seed(args.seed + worker_id)
@@ -117,7 +121,6 @@ def train(args, snapshot_path):
     ema_optimizer = WeightEMA(model, model_ema, alpha=0.99)
     ce_loss = CrossEntropyLoss(ignore_index=4)
     dice_loss = losses.pDLoss(num_classes, ignore_index=4)
-    bd_loss_fn = BoundaryLoss(iter_=1, weight_boundary=1.0)
 
     writer = SummaryWriter(snapshot_path + '/log')
     logging.info("{} iterations per epoch".format(len(trainloader)))
@@ -135,31 +138,29 @@ def train(args, snapshot_path):
             volume_batch, label_batch = volume_batch.cuda(), label_batch.cuda()
 
             with torch.no_grad():
-                ema_output = model_ema(volume_batch)
+                ema_output, ema_high, ema_low = model_ema(volume_batch)
                 outputs_soft_ema = torch.softmax(ema_output, dim=1)
-            outputs = model(volume_batch)
+            outputs, high, low = model(volume_batch)
             outputs_soft1 = torch.softmax(outputs, dim=1)
 
-            loss_ce = ce_loss(outputs, label_batch.long())
-            loss_ce_pseudo = ce_loss(ema_output, label_batch.long())
+            pseudo_label = process_pseudo_label(outputs_soft_ema, tau=args.tau)
+            pseudo_label_stu = process_pseudo_label(outputs_soft1, tau=args.tau)
 
-            with torch.no_grad():
-                denom = (loss_ce.detach() + loss_ce_pseudo.detach()).clamp_min(1e-8)
-                w_i = (loss_ce_pseudo.detach() / denom).item()
-                w_pseudo = (loss_ce.detach() / denom).item()
+            loss_ce = ce_loss(outputs, label_batch[:].long())
+            loss_ce_pseudo = ce_loss(ema_output, label_batch[:].long())
+            if loss_ce > loss_ce_pseudo:
+                loss_pseudo_ce = ce_loss(outputs, pseudo_label[:].long())
+                loss_pseudo_dc = dice_loss(outputs_soft1, pseudo_label.unsqueeze(1))
+            else:
+                loss_pseudo_ce = ce_loss(outputs, pseudo_label_stu[:].long())
+                loss_pseudo_dc = dice_loss(outputs_soft1, pseudo_label_stu.unsqueeze(1))
+            
+            loss_low = (F.l1_loss(ema_low, low) + F.l1_loss(ema_high, high)) / 2
 
-            mixed_prob = w_i * outputs_soft1 + w_pseudo * outputs_soft_ema
-            y_pl = torch.argmax(mixed_prob.detach(), dim=1)  
-            loss_PL = dice_loss(outputs_soft1, y_pl.unsqueeze(1)) + dice_loss(outputs_soft_ema, y_pl.unsqueeze(1))
 
-            y_pl_oh = F.one_hot(y_pl, num_classes=num_classes).permute(0, 3, 1, 2).float()
-            B_pl = exrct_boundary(y_pl_oh, iter_=1)
-            B_i  = exrct_boundary(outputs_soft1,  iter_=1)
-            B_j  = exrct_boundary(outputs_soft_ema,  iter_=1)
-            loss_BD = bd_loss_fn(B_j, B_pl.detach()) + bd_loss_fn(B_i, B_pl.detach())
-
-            loss_pse_sup = (loss_PL * 0.3)
-            loss = loss_ce + loss_pse_sup + 0.1 * loss_BD
+            consistency_weight = get_current_consistency_weight(iter_num // 300)  #150
+            loss_pse_sup = (loss_pseudo_dc+loss_pseudo_ce)*0.5
+            loss = loss_ce + loss_pse_sup  + (loss_low) * 0.3
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
@@ -171,6 +172,7 @@ def train(args, snapshot_path):
             iter_num = iter_num + 1
             writer.add_scalar('info/lr', lr_, iter_num)
             writer.add_scalar('info/total_loss', loss, iter_num)
+            writer.add_scalar('info/consistency_weight', consistency_weight, iter_num)
             writer.add_scalar('info/loss_ce', loss_ce, iter_num)
             if iter_num % 200 == 0:
                 logging.info(
@@ -181,7 +183,7 @@ def train(args, snapshot_path):
                 model.eval()
                 metric_list = 0.0
                 for i_batch, sampled_batch in enumerate(valloader):
-                    metric_i = test_single_volume_scribblevs(
+                    metric_i = test_single_volume_unethl(
                         sampled_batch["image"], sampled_batch["label"], model, classes=num_classes)
                     metric_list += np.array(metric_i)
                 metric_list = metric_list / len(db_val)

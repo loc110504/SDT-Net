@@ -155,13 +155,13 @@ def train(args, snapshot_path):
                 loss_pseudo_ce = ce_loss(outputs, pseudo_label_stu[:].long())
                 loss_pseudo_dc = dice_loss(outputs_soft1, pseudo_label_stu.unsqueeze(1))
             
-            loss_low = F.l1_loss(ema_low, low)
-            loss_high = 1 - F.cosine_similarity(ema_high.flatten(1), high.flatten(1)).mean()
+            loss_low = (F.l1_loss(ema_low, low) + F.l1_loss(ema_high, high)) / 2
+            loss_high = ((1 - F.cosine_similarity(ema_low.flatten(1), low.flatten(1)).mean()) + (1 - F.cosine_similarity(ema_high.flatten(1), high.flatten(1)).mean())) / 2
 
 
             consistency_weight = get_current_consistency_weight(iter_num // 300)  #150
             loss_pse_sup = (loss_pseudo_dc+loss_pseudo_ce)*0.5
-            loss = loss_ce + loss_pse_sup  + (loss_low + loss_high) * 0.5
+            loss = loss_ce + loss_pse_sup  + (loss_high) * 0.3
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
