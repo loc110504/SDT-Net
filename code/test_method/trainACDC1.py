@@ -157,10 +157,9 @@ def train(args, snapshot_path):
             
             loss_low = (F.l1_loss(ema_low, low) + F.l1_loss(ema_high, high)) / 2
 
-
             consistency_weight = get_current_consistency_weight(iter_num // 300)  #150
-            loss_pse_sup = (loss_pseudo_dc+loss_pseudo_ce)*0.5
-            loss = loss_ce + loss_pse_sup  + (loss_low) * 0.3
+            loss_pse_sup = (loss_pseudo_dc+loss_pseudo_ce)*0.5*consistency_weight
+            loss = loss_ce + loss_pse_sup + (loss_low) * 0.3 * consistency_weight
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
