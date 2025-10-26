@@ -12,9 +12,9 @@ Code implementation for:
 - Scribble annotations: [MSCMR_scribbles](https://github.com/BWGZK/CycleMix/tree/main/MSCMR_scribbles)
 - Scribble-annotated dataset for training: [MSCMR_dataset](https://github.com/BWGZK/CycleMix/tree/main/MSCMR_dataset). 
 
-|We have reorganized, preprocessed and splitted the datasets, and they are now available for download at: 👉 [Google Drive](https://drive.google.com/drive/folders/1OCPCEKdMr7Gh9v7xhSY5c_HF1e0TRkDL?usp=sharing)
+> We have reorganized the datasets, and they are now available for download at: 👉 [Google Drive](https://drive.google.com/drive/folders/1OCPCEKdMr7Gh9v7xhSY5c_HF1e0TRkDL?usp=sharing)
 
-# Requirements
+# Setup
 This code has been test with Python 3.10.18:
 Create environment:
 ```bash
@@ -27,9 +27,22 @@ Install packages:
 ```bash
 pip install -r requirements.txt
 ```
+# Usage
+Move to the training folder and execute the script:
+
+```bash
+cd code/train
+bash run.sh
+```
+### ⚙️ Configuration
+The `run.sh` file contains several configurable parameters for training experiments, such as:
+- Dataset path and type (e.g., ACDC, MSCMR)
+- Training hyperparameters like learning rate, batch size, and total iterations
+- Experimental settings such as seed, GPU index, and supervision type (e.g., scribble)
+You can modify these arguments in `run.sh` to adjust the training setup for your experiments.
 
 # Project Structure
-
+```
 ├── 📁 code
 │   ├── 📁 dataloader
 │   │   ├── __init__.py
@@ -62,20 +75,9 @@ pip install -r requirements.txt
 |
 ├── 📝 README.md
 └── 📄 requirements.txt
-
-# Usage
-Move to the training folder and execute the script:
-
-```bash
-cd code/train
-bash run.sh
 ```
-### ⚙️ Configuration
-The `run.sh` file contains several configurable parameters for training experiments, such as:
-- Dataset path and type (e.g., ACDC, MSCMR)
-- Training hyperparameters like learning rate, batch size, and total iterations
-- Experimental settings such as seed, GPU index, and supervision type (e.g., scribble)
-You can modify these arguments in `run.sh` to adjust the training setup for your experiments.
+
+
 
 
 # Acknowledgement
