@@ -36,10 +36,11 @@ def pseudo_label_generator_acdc(data, seed, beta=100, mode='bf'):
     return pseudo_label
 
 # ACDC Dataset Loader
-class BaseDataSets(Dataset):
+class ACDCDataSets(Dataset):
     """
     Base class for ACDC dataset loader. Choose the suitable fold and split
     """
+    
     def __init__(self, base_dir=None, split='train', transform=None, fold="fold1", sup_type="label"):
         self._base_dir = base_dir
         self.sample_list = []
@@ -65,16 +66,10 @@ class BaseDataSets(Dataset):
                     '{}.*'.format(ids), x) != None, self.all_volumes))
                 self.sample_list.extend(new_data_list)
 
-        # if num is not None and self.split == "train":
-        #     self.sample_list = self.sample_list[:num]
         print("total {} samples".format(len(self.sample_list)))
 
     def _get_fold_ids(self, fold):
-        """
-        Fold1:
-            - Training: patient021 to patient100
-            - Testing: patient001 to patient020
-        """
+
         all_cases_set = ["patient{:0>3}".format(i) for i in range(1, 101)]
         fold1_testing_set = [
             "patient{:0>3}".format(i) for i in range(1, 21)]
@@ -181,14 +176,12 @@ def random_rotate(image, label, cval):
 
 
 class RandomGenerator(object):
+
     def __init__(self, output_size):
         self.output_size = output_size
 
     def __call__(self, sample):
         image, label = sample['image'], sample['label']
-        # ind = random.randrange(0, img.shape[0])
-        # image = img[ind, ...]
-        # label = lab[ind, ...]
         if random.random() > 0.5:
             image, label = random_rot_flip(image, label)
         elif random.random() > 0.5:
@@ -209,12 +202,6 @@ class RandomGenerator(object):
 
 
 class TwoStreamBatchSampler(Sampler):
-    """Iterate two sets of indices
-
-    An 'epoch' is one iteration through the primary indices.
-    During the epoch, the secondary indices are iterated through
-    as many times as needed.
-    """
 
     def __init__(self, primary_indices, secondary_indices, batch_size, secondary_batch_size):
         self.primary_indices = primary_indices
@@ -251,7 +238,7 @@ def iterate_eternally(indices):
 
 
 def grouper(iterable, n):
-    "Collect data into fixed-length chunks or blocks"
+
     # grouper('ABCDEFG', 3) --> ABC DEF"
     args = [iter(iterable)] * n
     return zip(*args)

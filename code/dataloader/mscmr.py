@@ -38,9 +38,9 @@ def pseudo_label_generator_acdc(data, seed, beta=100, mode='bf'):
 # MSCMR Dataset Loader
 class MSCMRDataSets(Dataset):
     """
-    Base class for MSCMR dataset loader. Choose the suitable fold and split
+    Base class for MSCMR dataset loader
     """
-    def __init__(self, base_dir=None, split='train', transform=None, fold="fold1", sup_type="label"):
+    def __init__(self, base_dir=None, split='train', transform=None, sup_type="label"):
         self._base_dir = base_dir
         self.sample_list = []
         self.split = split
