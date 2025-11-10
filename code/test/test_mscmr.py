@@ -75,7 +75,7 @@ def Inference(FLAGS):
         if f.endswith(".h5")
     ]
     image_list.sort()
-    save_mode_path = "../../checkpoints/MSCMR_DualTeacher/unet_hl_best_model.pth"
+    save_mode_path = "../../checkpoints/MSCMR_SDTNet/unet_hl_best_model.pth"
     net = net_factory(net_type=FLAGS.model, in_chns=1,
                       class_num=FLAGS.num_classes)
     net.load_state_dict(torch.load(save_mode_path))
