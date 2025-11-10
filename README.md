@@ -21,8 +21,8 @@ The overall framework of SDTNet:
 git clone https://github.com/loc110504/SDTNET.git
 cd SDTNET
 
-conda create -n sdtnet python=3.10
-conda activate sdtnet
+conda create -n env python=3.10
+conda activate env
 ```
 2. Install requirements and packages
 ```bash
@@ -33,14 +33,15 @@ pip install -r requirements.txt
 
 ```bash
 cd code/train
-bash run.sh
+python train_method_acdc.py # ACDC
+python train_method_mscmr.py # MSCMRseg
 ```
 
 2. For testing:
 ```bash
 cd code/test
-python test_acdc.py # for ACDC dataset
-python test_mscmr.py # for MSCMRseg dataset
+python test_acdc.py # ACDC
+python test_mscmr.py # MSCMRseg
 ```
 
 ### Acknowledgement
