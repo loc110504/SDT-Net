@@ -1,13 +1,19 @@
-<div align="center">
-  <h1 style="
-    color:#4c6fff;
-    font-style:italic;
-    letter-spacing: 2px;
-    text-shadow: 0 0 8px rgba(76,111,255,0.6);
-  ">
+<svg width="600" height="150" viewBox="0 0 600 150" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    .title {
+      fill: #4c6fff;
+      font-size: 72px;
+      font-style: italic;
+      letter-spacing: 4px;
+      font-family: Arial, sans-serif;
+      text-shadow: 0 0 8px rgba(76,111,255,0.6);
+    }
+  </style>
+  <text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" class="title">
     SDT-Net
-  </h1>
-</div>
+  </text>
+</svg>
+
 
 Official code implementation of *"SDT-Net: Dynamic Teacher Switching with Hierarchical Consistency for Scribble-Supervised Medical Image Segmentation"*
 ### Introduction
