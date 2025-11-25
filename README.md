@@ -13,7 +13,9 @@
     SDT-Net
   </text>
 </svg>
-
+<p align="center">
+  <img src="sdt-net.svg" width="350">
+</p>
 
 Official code implementation of *"SDT-Net: Dynamic Teacher Switching with Hierarchical Consistency for Scribble-Supervised Medical Image Segmentation"*
 ### Introduction
